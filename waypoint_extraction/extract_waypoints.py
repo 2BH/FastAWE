@@ -87,23 +87,25 @@ def heuristic_waypoint_selection(
     waypoints = [len(actions) - 1]
 
     # make the frames of gripper open/close waypoints
+    gripper_openness = actions["gripper_openness"]
     for i in range(len(actions) - 1):
-        if actions[i, -1] != actions[i + 1, -1]:
+        if gripper_openness[i] != gripper_openness[i + 1]:
             waypoints.append(i)
     waypoints.sort()
 
+    
     # if 'robot0_vel_ang' or 'robot0_vel_lin' in gt_states is close to 0, make the frame a waypoint
     for i in range(len(gt_states)):
-        if (
-            np.linalg.norm(gt_states[i]["robot0_vel_ang"]) < err_threshold
-            or np.linalg.norm(gt_states[i]["robot0_vel_lin"]) < err_threshold
-        ):
+        if "vel_ang" in gt_states[i] and np.linalg.norm(gt_states[i]["vel_ang"]) < err_threshold:
+            waypoints.append(i)
+        if "vel_lin" in gt_states[i] and np.linalg.norm(gt_states[i]["vel_lin"]) < err_threshold:
             waypoints.append(i)
 
     waypoints.sort()
-
+    # Remove all duplicates
+    waypoints = list(set(waypoints))
     print("=======================================================================")
-    print(f"Selected {len(waypoints)} waypoints: {waypoints}")
+    print(f"Selected {len(waypoints)} waypoints indices: {waypoints}")
     return waypoints
 
 
@@ -158,16 +160,16 @@ def backtrack_waypoint_selection(
 def dp_waypoint_selection(
     env=None,
     actions=None,
-    gt_states=None,
+    states=None,
     err_threshold=None,
     initial_states=None,
     remove_obj=None,
     pos_only=False,
 ):
     if actions is None:
-        actions = copy.deepcopy(gt_states)
-    elif gt_states is None:
-        gt_states = copy.deepcopy(actions)
+        actions = copy.deepcopy(states)
+    elif states is None:
+        states = copy.deepcopy(actions)
         
     num_frames = len(actions)
 
@@ -197,33 +199,40 @@ def dp_waypoint_selection(
     )
 
     # Check if err_threshold is too small, then return all points as waypoints
-    min_error = func(actions, gt_states, list(range(1, num_frames)))
+    min_error = func(actions, states, list(range(1, num_frames)))
     if err_threshold < min_error:
-        print("Error threshold is too small, returning all points as waypoints.")
-        return list(range(1, num_frames))
+        # print("Error threshold is too small, Minimum error is ", min_error, "returning all points as waypoints.")
+        print("Error threshold is too small, Minimum error is ", min_error)
 
     # Populate the memoization table using an iterative bottom-up approach
     for i in range(1, num_frames):
         min_waypoints_required = float("inf")
         best_waypoints = []
 
-        for k in range(1, i):
+        for k in range(0, i):
             # waypoints are relative to the subsequence
-            waypoints = [j - k for j in initial_waypoints if j >= k and j < i] + [i - k]
+            waypoints = [j - k for j in initial_waypoints if j > k and j < i] + [i - k]
 
             total_traj_err = func(
                 actions=actions[k : i + 1],
-                gt_states=gt_states[k : i + 1],
+                gt_states=states[k : i + 1],
                 waypoints=waypoints,
             )
 
             if total_traj_err < err_threshold:
-                subproblem_waypoints_count, subproblem_waypoints = memo[k - 1]
+                subproblem_waypoints_count, subproblem_waypoints = memo[k]
                 total_waypoints_count = 1 + subproblem_waypoints_count
 
                 if total_waypoints_count < min_waypoints_required:
                     min_waypoints_required = total_waypoints_count
                     best_waypoints = subproblem_waypoints + [i]
+
+            
+        # If no valid solution found, this trajectory cannot satisfy the threshold
+        if min_waypoints_required == float("inf"):
+            print(f"Error: Cannot find valid waypoint path up to frame {i} with threshold {err_threshold}")
+            print("Returning all points as waypoints.")
+            return list(range(num_frames))
 
         memo[i] = (min_waypoints_required, best_waypoints)
 
@@ -232,8 +241,9 @@ def dp_waypoint_selection(
     # remove duplicates
     waypoints = list(set(waypoints))
     waypoints.sort()
+    final_err = func(actions, states, waypoints)
     print(
-        f"Minimum number of waypoints: {len(waypoints)} \tTrajectory Error: {total_traj_err}"
+        f"Minimum number of waypoints: {len(waypoints)} \tTrajectory Error: {final_err}"
     )
     print(f"waypoint positions: {waypoints}")
 

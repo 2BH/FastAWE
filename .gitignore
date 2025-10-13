@@ -128,11 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# data
-robomimic/datasets
-data/
-*.zip
-
 # misc
 mujoco-py
 MUJOCO_LOG.TXT
@@ -140,7 +135,3 @@ MUJOCO_LOG.TXT
 wandb/
 plot/
 video/
-
-# log
-robomimic/bc_trained_models*
-robomimic/robomimic/debug

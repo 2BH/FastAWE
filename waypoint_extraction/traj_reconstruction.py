@@ -1,10 +1,8 @@
 import numpy as np
-import wandb
 from scipy.spatial.transform import Rotation
-
-from utils import put_text, remove_object
-
-import robosuite.utils.transform_utils as T
+import wandb
+from .utils import put_text, quat_slerp
+import warnings
 
 
 def linear_interpolation(p1, p2, t):
@@ -15,6 +13,9 @@ def linear_interpolation(p1, p2, t):
 def point_line_distance(point, line_start, line_end):
     """Compute the shortest distance between a 3D point and a line segment defined by two 3D points"""
     line_vector = line_end - line_start
+    if np.allclose(line_vector, 0, atol=1e-5):
+        warnings.warn("line_vector is zero")
+        return np.linalg.norm(point - line_start)
     point_vector = point - line_start
     # t represents the position of the orthogonal projection of the given point onto the infinite line defined by the segment
     t = np.dot(point_vector, line_vector) / np.dot(line_vector, line_vector)
@@ -24,7 +25,7 @@ def point_line_distance(point, line_start, line_end):
 
 
 def point_quat_distance(point, quat_start, quat_end, t, total):
-    pred_point = T.quat_slerp(quat_start, quat_end, fraction=t / total)
+    pred_point = quat_slerp(quat_start, quat_end, fraction=t / total)
     err_quat = (
         Rotation.from_quat(pred_point) * Rotation.from_quat(point).inv()
     ).magnitude()
@@ -37,8 +38,8 @@ def geometric_waypoint_trajectory(actions, gt_states, waypoints, return_list=Fal
     # prepend 0 to the waypoints for geometric computation
     if waypoints[0] != 0:
         waypoints = [0] + waypoints
-    gt_pos = [p["robot0_eef_pos"] for p in gt_states]
-    gt_quat = [p["robot0_eef_quat"] for p in gt_states]
+    gt_pos = [p["eef_pos"] for p in gt_states]
+    gt_quat = [p["eef_quat"] for p in gt_states]
 
     keypoints_pos = [actions[k, :3] for k in waypoints]
     keypoints_quat = [gt_quat[k] for k in waypoints]
@@ -86,7 +87,9 @@ def geometric_waypoint_trajectory(actions, gt_states, waypoints, return_list=Fal
 def pos_only_geometric_waypoint_trajectory(
     actions, gt_states, waypoints, return_list=False
 ):
-    """Compute the geometric trajectory from the waypoints"""
+    """Compute the geometric trajectory from the waypoints,
+    actions has the shape (T, 3), meaning the eef position in the xyz plane
+    """
 
     # prepend 0 to the waypoints for geometric computation
     if waypoints[0] != 0:
@@ -113,10 +116,10 @@ def pos_only_geometric_waypoint_trajectory(
             )
             state_err.append(pos_err)
 
-    # print the average and max error
-    print(
-        f"Average pos error: {np.mean(state_err):.6f} \t Max pos error: {np.max(state_err):.6f}"
-    )
+    # # print the average and max error
+    # print(
+    #     f"Average pos error: {np.mean(state_err):.6f} \t Max pos error: {np.max(state_err):.6f}"
+    # )
 
     if return_list:
         return total_traj_err(state_err), state_err
@@ -212,13 +215,13 @@ def total_traj_err(err_list):
 
 def compute_state_error(gt_state, pred_state):
     """Compute the state error between the ground truth and predicted states."""
-    err_pos = np.linalg.norm(gt_state["robot0_eef_pos"] - pred_state["robot0_eef_pos"])
+    err_pos = np.linalg.norm(gt_state["eef_pos"] - pred_state["eef_pos"])
     err_quat = (
-        Rotation.from_quat(gt_state["robot0_eef_quat"])
-        * Rotation.from_quat(pred_state["robot0_eef_quat"]).inv()
+        Rotation.from_quat(gt_state["eef_quat"])
+        * Rotation.from_quat(pred_state["eef_quat"]).inv()
     ).magnitude()
     err_joint_pos = np.linalg.norm(
-        gt_state["robot0_joint_pos"] - pred_state["robot0_joint_pos"]
+        gt_state["joint_pos"] - pred_state["joint_pos"]
     )
     state_err = dict(err_pos=err_pos, err_quat=err_quat, err_joint_pos=err_joint_pos)
     return state_err
@@ -253,13 +256,3 @@ def dynamic_time_warping(seq1, seq2, idx1=0, idx2=0, memo=None):
         memo[(idx1, idx2)] = error_without_current, subseq_without_current
 
     return memo[(idx1, idx2)]
-
-
-def reset_env(env, initial_state=None, remove_obj=False):
-    # load the initial state
-    if initial_state is not None:
-        env.reset_to(initial_state)
-
-    # remove the object from the scene
-    if remove_obj:
-        remove_object(env)
