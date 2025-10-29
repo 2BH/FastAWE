@@ -1,13 +1,3 @@
-torch
-torchvision
-mujoco-py
-tqdm
-wandb
-ipdb
-numpy>=1.20.0 # for robosuite
-numba>=0.52.0
-scipy>=1.2.3
-matplotlib
-moviepy 
-imageio
-opencv-python
+tqdm==4.67.1
+numpy==2.2.6
+scipy==1.15.3

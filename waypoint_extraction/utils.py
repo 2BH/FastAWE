@@ -1,39 +1,8 @@
 import numpy as np
 import math
-import cv2
 
 PI = np.pi
 EPS = np.finfo(float).eps * 4.0
-
-def put_text(img, text, is_waypoint=False, font_size=1, thickness=2, position="top"):
-    img = img.copy()
-    if position == "top":
-        p = (10, 30)
-    elif position == "bottom":
-        p = (10, img.shape[0] - 60)
-    # put the frame number in the top left corner
-    img = cv2.putText(
-        img,
-        str(text),
-        p,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        font_size,
-        (0, 255, 255),
-        thickness,
-        cv2.LINE_AA,
-    )
-    if is_waypoint:
-        img = cv2.putText(
-            img,
-            "*",
-            (10, 60),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_size,
-            (255, 255, 0),
-            thickness,
-            cv2.LINE_AA,
-        )
-    return img
 
 def unit_vector(data, axis=None, out=None):
     """
